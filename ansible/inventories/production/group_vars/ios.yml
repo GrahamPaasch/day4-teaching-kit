@@ -1,0 +1,6 @@
+# IOS group variables
+# Example interface used in Lab 4A (change for your device)
+ios_access_port: "GigabitEthernet1/0/10"
+iface_desc: "LAB4A access port"
+vlan_id: 123
+vlan_name: "DEMO-123"

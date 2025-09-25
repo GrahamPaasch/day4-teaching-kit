@@ -1,0 +1,121 @@
+---
+- name: Lab 4A — Multi‑Vendor VLAN + Interface Descriptions
+  hosts: "{{ target | default('canary') }}"
+  gather_facts: no
+  any_errors_fatal: true
+  serial: 25
+
+  pre_tasks:
+    - name: Take pre-change backup (Junos)
+      when: "'junos' in group_names"
+      junipernetworks.junos.junos_config:
+        backup: yes
+
+    - name: IOS pre-change - show run (artifact only)
+      when: "'ios' in group_names"
+      cisco.ios.ios_command:
+        commands:
+          - show running-config | section ^vlan
+          - show running-config | section ^interface {{ ios_access_port }}
+      register: ios_pre
+
+  tasks:
+    - name: Dry-run preview (Junos)
+      when: "'junos' in group_names"
+      junipernetworks.junos.junos_config:
+        check: true
+        diff: true
+        lines:
+          - "set vlans {{ vlan_name }} vlan-id {{ vlan_id }}"
+          - "set interfaces {{ junos_access_port }} unit 0 family ethernet-switching port-mode access"
+          - "set interfaces {{ junos_access_port }} unit 0 family ethernet-switching vlan members {{ vlan_name }}"
+          - "set interfaces {{ junos_access_port }} description {{ iface_desc }}"
+
+    - name: Dry-run preview (IOS)
+      when: "'ios' in group_names"
+      cisco.ios.ios_config:
+        save_when: never
+        diff_against: running
+        diff_ignore_lines:
+          - "^!"
+        parents: ["vlan {{ vlan_id }}"]
+        lines:
+          - "name {{ vlan_name }}"
+      check_mode: yes
+
+    - name: Dry-run preview (IOS interface)
+      when: "'ios' in group_names"
+      cisco.ios.ios_config:
+        save_when: never
+        diff_against: running
+        diff_ignore_lines:
+          - "^!"
+        parents: ["interface {{ ios_access_port }}"]
+        lines:
+          - "description {{ iface_desc }}"
+          - "switchport mode access"
+          - "switchport access vlan {{ vlan_id }}"
+      check_mode: yes
+
+    - name: Apply VLAN + interface (Junos) with commit-confirm
+      when: "'junos' in group_names"
+      junipernetworks.junos.junos_config:
+        lines:
+          - "set vlans {{ vlan_name }} vlan-id {{ vlan_id }}"
+          - "set interfaces {{ junos_access_port }} unit 0 family ethernet-switching port-mode access"
+          - "set interfaces {{ junos_access_port }} unit 0 family ethernet-switching vlan members {{ vlan_name }}"
+          - "set interfaces {{ junos_access_port }} description {{ iface_desc }}"
+        comment: "Lab4A multi-vendor change"
+        commit: yes
+        confirm: "{{ commit_confirm_seconds }}"
+        diff: true
+      register: junos_apply
+
+    - name: Validate Junos VLAN + interface
+      when: "'junos' in group_names"
+      junipernetworks.junos.junos_command:
+        commands:
+          - "show vlans | display set | match {{ vlan_name }}"
+          - "show interfaces descriptions {{ junos_access_port }} | match {{ iface_desc }}"
+      register: jvalidate
+
+    - name: Confirm commit (disarm confirm timer)
+      when: "'junos' in group_names and (jvalidate is defined) and (jvalidate.stdout[0] is search(vlan_name)) and (jvalidate.stdout[1] is search(iface_desc))"
+      junipernetworks.junos.junos_command:
+        commands:
+          - "request system commit"
+
+    - name: Apply IOS VLAN
+      when: "'ios' in group_names"
+      cisco.ios.ios_config:
+        parents: ["vlan {{ vlan_id }}"]
+        lines:
+          - "name {{ vlan_name }}"
+        save_when: modified
+
+    - name: Apply IOS interface config
+      when: "'ios' in group_names"
+      cisco.ios.ios_config:
+        parents: ["interface {{ ios_access_port }}"]
+        lines:
+          - "description {{ iface_desc }}"
+          - "switchport mode access"
+          - "switchport access vlan {{ vlan_id }}"
+        save_when: modified
+
+    - name: Validate IOS VLAN
+      when: "'ios' in group_names"
+      cisco.ios.ios_command:
+        commands:
+          - show vlan brief | include {{ vlan_id }}
+          - show interface {{ ios_access_port }} description | include {{ iface_desc }}
+      register: ios_validate
+
+  post_tasks:
+    - name: Summarize results
+      debug:
+        msg:
+          host: "{{ inventory_hostname }}"
+          junos_applied: "{{ junos_apply is changed if junos_apply is defined else 'n/a' }}"
+          ios_vlan: "{{ ios_validate.stdout[0] if ios_validate is defined else 'n/a' }}"
+          ios_desc: "{{ ios_validate.stdout[1] if ios_validate is defined else 'n/a' }}"

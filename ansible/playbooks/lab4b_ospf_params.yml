@@ -1,0 +1,44 @@
+---
+- name: Lab 4B — OSPF adjacency parameters (optional stretch)
+  hosts: "{{ target | default('canary') }}"
+  gather_facts: no
+  any_errors_fatal: true
+  serial: 10
+
+  vars:
+    ospf_area: 0
+    hello: 10
+    dead: 40
+
+  tasks:
+    - name: Junos OSPF interface timers
+      when: "'junos' in group_names"
+      junipernetworks.junos.junos_config:
+        lines:
+          - "set protocols ospf area {{ ospf_area }} interface {{ junos_access_port }} hello-interval {{ hello }}"
+          - "set protocols ospf area {{ ospf_area }} interface {{ junos_access_port }} dead-interval {{ dead }}"
+        commit: yes
+        confirm: 180
+
+    - name: IOS OSPF interface timers
+      when: "'ios' in group_names"
+      cisco.ios.ios_config:
+        parents: ["interface {{ ios_access_port }}"]
+        lines:
+          - "ip ospf hello-interval {{ hello }}"
+          - "ip ospf dead-interval {{ dead }}"
+        save_when: modified
+
+    - name: Validate neighbors (IOS)
+      when: "'ios' in group_names"
+      cisco.ios.ios_command:
+        commands:
+          - show ip ospf neighbor
+      register: ospf_ios
+
+    - name: Validate neighbors (Junos)
+      when: "'junos' in group_names"
+      junipernetworks.junos.junos_command:
+        commands:
+          - show ospf neighbor
+      register: ospf_junos

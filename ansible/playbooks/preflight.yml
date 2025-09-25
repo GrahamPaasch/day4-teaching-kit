@@ -1,0 +1,28 @@
+---
+- name: Junos & IOS reachability and facts
+  hosts: "{{ target | default('canary') }}"
+  gather_facts: no
+  serial: 10
+
+  tasks:
+    - name: Collect Junos facts
+      when: "'junos' in group_names"
+      junipernetworks.junos.junos_facts:
+      register: jf
+
+    - name: Ensure Junos NETCONF up
+      when: jf is defined
+      assert:
+        that:
+          - jf.ansible_facts.ansible_net_hostname is defined
+
+    - name: Collect IOS facts
+      when: "'ios' in group_names"
+      cisco.ios.ios_facts:
+      register: ifacts
+
+    - name: Ensure IOS reachable
+      when: ifacts is defined
+      assert:
+        that:
+          - ifacts.ansible_facts.ansible_net_hostname is defined

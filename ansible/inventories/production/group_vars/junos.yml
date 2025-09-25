@@ -1,0 +1,8 @@
+# Junos group variables
+commit_confirm_seconds: 180
+
+# Example interface used in Lab 4A (change for your device)
+junos_access_port: "ge-0/0/10"
+iface_desc: "LAB4A access port"
+vlan_id: 123
+vlan_name: "DEMO-123"
